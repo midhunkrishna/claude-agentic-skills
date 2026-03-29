@@ -1,25 +1,33 @@
-# Hydra
+# Claude Agentic Skills
 
-A multi-agent orchestration framework for Claude Code. Hydra decomposes complex software engineering tasks into specialized sub-tasks handled by narrowly-focused agents, then merges their outputs into a single high-signal result.
+A multi-agent orchestration system for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). It decomposes complex software engineering tasks into specialized sub-tasks handled by narrowly-focused agents, then merges their outputs into a single high-signal result.
 
 ## How It Works
 
-Hydra uses a **hub-and-spoke model**:
+The system uses a **hub-and-spoke model**:
 
 1. A main **orchestrator** (defined in `CLAUDE.md`) receives user requests
-2. It decides on an execution strategy: **direct**, **sequential**, or **parallel**
-3. Specialized **subagents** handle narrow, well-defined roles
+2. It classifies the task and selects an **execution strategy**: direct, sequential, or parallel
+3. Specialized **subagents** handle narrow, well-defined analysis or implementation roles
 4. All agents return structured output using a **shared compact contract**
-5. The orchestrator merges, deduplicates, and filters findings into a final response
+5. The orchestrator merges, deduplicates, and filters findings using a **confidence model** and **priority weights**
+
+### Execution Strategies
+
+| Strategy | When to use | Example flow |
+|---|---|---|
+| **Direct** | Small, localized task; one skill needed | Single agent handles it |
+| **Sequential** | Steps depend on each other | planner → code-reader → implementer → code-reviewer |
+| **Parallel** | Independent analysis lenses | code-reviewer + adversarial-analyst + security-analyst |
 
 ## Agents
 
-Hydra includes 12 specialized agents (defined in `agents/`):
+Includes 12 specialized agents (defined in `agents/`):
 
 | Agent | Role |
 |---|---|
 | **planner** | Breaks ambiguous work into execution-ready plans with dependencies and sequencing |
-| **codebase-reader** | Finds relevant files, symbols, dependencies, and current behavior |
+| **code-reader** | Finds relevant files, symbols, dependencies, and current behavior |
 | **implementer** | Produces concrete code/config changes from a validated plan |
 | **code-reviewer** | Reviews code, diffs, APIs, and plans for correctness and maintainability |
 | **adversarial-analyst** | Stress-tests plans by finding failure modes, edge cases, and abuse paths |
@@ -33,7 +41,7 @@ Hydra includes 12 specialized agents (defined in `agents/`):
 
 ## Skills
 
-Each agent has a corresponding skill implementation in `skills/`, plus a shared output contract:
+Each agent has a corresponding skill (invocable as a slash command) in `skills/`, plus a shared output contract:
 
 ```
 skills/
@@ -54,26 +62,28 @@ skills/
 
 ## Pre-defined Agent Bundles
 
-The orchestrator includes 13 pre-defined bundles for common task patterns:
+The orchestrator selects from 13 pre-defined bundles based on the task. Conditional agents (marked with "if ...") are included only when relevant.
 
-- **critique-plan** — code-reviewer + adversarial-analyst + solution-fit-analyst + optional security/observability/ux
-- **critique-implementation** — code-reviewer + adversarial-analyst + solution-fit-analyst
-- **architecture-sanity-check** — architect + solution-fit-analyst + code-reviewer + adversarial-analyst
-- **api-design-check** — code-reviewer + solution-fit-analyst + architect
-- **performance-review** — performance-tuner + code-reviewer + solution-fit-analyst
-- **infra-risk-check** — code-reviewer + adversarial-analyst + security-analyst + solution-fit-analyst
-- **design-user-flow** — ux-designer + code-reviewer + adversarial-analyst
-- **system-design** — architect + solution-fit-analyst + code-reviewer + observability-analyst
-- **operability-check** — observability-analyst + adversarial-analyst + code-reviewer
-- **async-system-check** — adversarial-analyst + observability-analyst + code-reviewer
-- **hot-path-check** — performance-tuner + code-reviewer + solution-fit-analyst
-- **async-system-performance-check** — performance-tuner + adversarial-analyst + observability-analyst
-- **api-performance-check** — performance-tuner + architect + code-reviewer
+| Bundle | Core agents | Conditional |
+|---|---|---|
+| **critique-plan** | code-reviewer, adversarial-analyst, solution-fit-analyst | security, observability, ux |
+| **critique-implementation** | code-reviewer, adversarial-analyst, solution-fit-analyst | security, observability |
+| **architecture-sanity-check** | architect, solution-fit-analyst, code-reviewer, adversarial-analyst | security, observability |
+| **system-design** | architect, solution-fit-analyst, code-reviewer, observability-analyst | security |
+| **api-design-check** | code-reviewer, solution-fit-analyst, architect | security, observability |
+| **infra-risk-check** | code-reviewer, adversarial-analyst, security-analyst, solution-fit-analyst, observability-analyst | — |
+| **design-user-flow** | ux-designer, code-reviewer, solution-fit-analyst | adversarial, security |
+| **operability-check** | observability-analyst, adversarial-analyst, code-reviewer | security |
+| **async-system-check** | adversarial-analyst, observability-analyst, code-reviewer, solution-fit-analyst | security |
+| **performance-review** | performance-tuner, code-reviewer, solution-fit-analyst | observability |
+| **hot-path-check** | performance-tuner, code-reviewer, solution-fit-analyst | — |
+| **async-system-performance-check** | performance-tuner, adversarial-analyst, observability-analyst, code-reviewer | — |
+| **api-performance-check** | performance-tuner, architect, code-reviewer | observability |
 
 ## Project Structure
 
 ```
-hydra/
+claude-agentic-skills/
 ├── CLAUDE.md              # Orchestrator instructions (execution strategy, routing, merging)
 ├── README.md              # This file
 ├── agents/                # Agent role definitions (12 .md files)
@@ -87,60 +97,61 @@ hydra/
 
 ## Installation
 
-### Install as Claude Code Skills
+The system has three components that all need to be installed:
 
-Hydra's skills are designed to be installed into Claude Code via the project-level `.claude/settings.json` configuration.
+| Component | Purpose |
+|---|---|
+| **CLAUDE.md** | Orchestrator brain — execution strategy, agent routing, merging rules |
+| **agents/** | Subagent role definitions — injected as system prompts when the orchestrator delegates |
+| **skills/** | Slash commands — procedural guides registered in settings.json |
 
-#### 1. Clone or copy the plugin
-
-```bash
-# If part of claude-agent-kit
-git clone <repo-url> ~/claude-agent-kit
-
-# Or copy just the hydra plugin to a location of your choice
-cp -r plugins/hydra ~/.claude/plugins/hydra
-```
-
-#### 2. Add the CLAUDE.md orchestrator instructions
-
-Copy the contents of `CLAUDE.md` into your project's `.claude/CLAUDE.md` (or your global `~/.claude/CLAUDE.md`) to enable the orchestrator logic:
+### Quick Start (Global)
 
 ```bash
-# For global use (all projects)
-cat CLAUDE.md >> ~/.claude/CLAUDE.md
+# 1. Clone the repo
+git clone <repo-url> ~/claude-agentic-skills
 
-# For a specific project
-mkdir -p .claude
-cat /path/to/hydra/CLAUDE.md >> .claude/CLAUDE.md
+# 2. Symlink orchestrator and agents into ~/.claude/
+ln -sf ~/claude-agentic-skills/CLAUDE.md ~/.claude/CLAUDE.md
+ln -sf ~/claude-agentic-skills/agents ~/.claude/agents
+
+# 3. Register skills in ~/.claude/settings.json
 ```
 
-#### 3. Register skills in settings.json
-
-Add skill entries to your `.claude/settings.json` (project-level) or `~/.claude/settings.json` (global). Each skill maps a slash command name to its `SKILL.md` file:
+Add the following to `~/.claude/settings.json`:
 
 ```json
 {
   "skills": {
-    "planner": "/path/to/hydra/skills/planner/SKILL.md",
-    "code-reader": "/path/to/hydra/skills/code-reader/SKILL.md",
-    "implementer": "/path/to/hydra/skills/implementer/SKILL.md",
-    "code-reviewer": "/path/to/hydra/skills/code-reviewer/SKILL.md",
-    "adversarial-analyst": "/path/to/hydra/skills/adversarial-analyst/SKILL.md",
-    "security-analyst": "/path/to/hydra/skills/security-analyst/SKILL.md",
-    "solution-fit-analyst": "/path/to/hydra/skills/solution-fit-analyst/SKILL.md",
-    "obervability-analyst": "/path/to/hydra/skills/obervability-analyst/SKILL.md",
-    "ux-designer": "/path/to/hydra/skills/ux-designer/SKILL.md",
-    "code-explainer": "/path/to/hydra/skills/code-explainer/SKILL.md",
-    "architecture-design": "/path/to/hydra/skills/architecture-design/SKILL.md",
-    "performance-tuner": "/path/to/hydra/skills/performance-tuner/SKILL.md",
-    "shared-contract": "/path/to/hydra/skills/shared-contract/SKILL.md"
+    "planner": "~/claude-agentic-skills/skills/planner/SKILL.md",
+    "code-reader": "~/claude-agentic-skills/skills/code-reader/SKILL.md",
+    "implementer": "~/claude-agentic-skills/skills/implementer/SKILL.md",
+    "code-reviewer": "~/claude-agentic-skills/skills/code-reviewer/SKILL.md",
+    "adversarial-analyst": "~/claude-agentic-skills/skills/adversarial-analyst/SKILL.md",
+    "security-analyst": "~/claude-agentic-skills/skills/security-analyst/SKILL.md",
+    "solution-fit-analyst": "~/claude-agentic-skills/skills/solution-fit-analyst/SKILL.md",
+    "obervability-analyst": "~/claude-agentic-skills/skills/obervability-analyst/SKILL.md",
+    "ux-designer": "~/claude-agentic-skills/skills/ux-designer/SKILL.md",
+    "code-explainer": "~/claude-agentic-skills/skills/code-explainer/SKILL.md",
+    "architecture-design": "~/claude-agentic-skills/skills/architecture-design/SKILL.md",
+    "performance-tuner": "~/claude-agentic-skills/skills/performance-tuner/SKILL.md",
+    "shared-contract": "~/claude-agentic-skills/skills/shared-contract/SKILL.md"
   }
 }
 ```
 
-Replace `/path/to/hydra` with the actual path where you placed the plugin (e.g., `~/.claude/plugins/hydra`).
+### Project-Level Installation
 
-#### 4. Verify installation
+To install for a single project instead of globally, symlink into the project's `.claude/` directory:
+
+```bash
+ln -sf ~/claude-agentic-skills/CLAUDE.md .claude/CLAUDE.md
+ln -sf ~/claude-agentic-skills/agents .claude/agents
+```
+
+And add the skills block to `.claude/settings.json` instead.
+
+### Verify Installation
 
 Start a Claude Code session and invoke a skill:
 
@@ -150,9 +161,9 @@ Start a Claude Code session and invoke a skill:
 /adversarial-analyst Stress-test the caching layer
 ```
 
-### Using the Agents Directly
+### Using Agents Directly
 
-You can also reference agent definitions directly when spawning subagents. The `agents/` directory contains role definitions that describe each agent's responsibilities, focus areas, and when to use them. These are used by the orchestrator to route tasks and pack context for subagent calls.
+The `agents/` directory contains role definitions that describe each agent's responsibilities, focus areas, and when to use them. These are used by the orchestrator to route tasks and pack context for subagent calls, but can also be referenced directly when spawning subagents.
 
 ## Shared Output Contract
 
@@ -178,6 +189,16 @@ All agents return structured output in this format:
 
 Max ~180 tokens per response unless status is BLOCKED.
 
+## Orchestrator Behavior
+
+The orchestrator (defined in `CLAUDE.md`) handles:
+
+- **Cost-aware delegation** — scales agent count with task complexity (low: no fan-out, medium: max 2, high: max 3-4)
+- **Context packing** — each subagent receives only the goal, constraints, known facts, and input artifacts it needs
+- **Confidence model** — findings classified as HIGH (evidence-backed), MEDIUM (plausible), or LOW (speculative)
+- **Priority weights** — when agents conflict: security-analyst > adversarial-analyst > code-reviewer > ux-designer
+- **Convergence** — max 1 parallel pass + 1 escalation pass; no loops
+
 ## Design Principles
 
 - **Narrow specialization** — each agent does one job well
@@ -185,4 +206,4 @@ Max ~180 tokens per response unless status is BLOCKED.
 - **Token efficiency** — dense, evidence-based, actionable outputs
 - **Orchestrator owns synthesis** — subagents report, the orchestrator merges
 - **Evidence-based** — distinguish observed facts from inferences
-- **Convergence** — max 1 parallel pass + 1 escalation pass; no loops
+- **Convergence** — stop when findings are clear; no re-running without new input
